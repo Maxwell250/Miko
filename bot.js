@@ -219,7 +219,7 @@ Bot.setupBot = function () {
 };
 
 Bot.onRawData = function (packet) {
-  if (packet.t !== "MESSAGE_REACTION_ADD" || packet.t !== "MESSAGE_REACTION_REMOVE") return;
+  if (packet.t !== "MESSAGE_REACTION_ADD" && packet.t !== "MESSAGE_REACTION_REMOVE") return;
 
   const client = Bot.bot;
   const channel = client.channels.resolve(packet.d.channel_id);
@@ -543,11 +543,11 @@ Bot.setCommandsForServer = function(guild, commands, printMissingAccessError) {
 };
 
 Bot.setAllServerCommands = function (commands, printMissingAccessError = true) {
-  this.bot.guilds.cache.forEach((key, value) => {
+  this.bot.guilds.cache.forEach((guild, id) => {
     this.bot.guilds
-      .fetch(key)
-      .then((guild) => {
-        this.setCommandsForServer(guild, commands, printMissingAccessError);
+      .fetch(id)
+      .then((guildObj) => {
+        this.setCommandsForServer(guildObj, commands, printMissingAccessError);
       })
       .catch(function (e) {
         console.error(e);
