@@ -37,7 +37,7 @@ class FuturesTradingEngine:
     def _risk(self) -> RiskEngine:
         return RiskEngine(self.settings)
 
-    async def run_cycle(self) -> list[dict]:
+    async def run_cycle(self, *, scan_only: bool = False) -> list[dict]:
         settings = self.settings
         if not settings.tbank_token:
             raise RuntimeError("TBANK_TOKEN не задан. Получите токен: tbank.ru/invest/open-api")
@@ -49,7 +49,7 @@ class FuturesTradingEngine:
         results: list[dict] = []
         risk = self._risk()
         for inst in instruments:
-            result = await self._process_instrument(account_id, snapshot, inst, risk)
+            result = await self._process_instrument(account_id, snapshot, inst, risk, scan_only=scan_only)
             results.append(result)
         return results
 
@@ -59,6 +59,8 @@ class FuturesTradingEngine:
         snapshot,
         inst: FutureInstrument,
         risk: RiskEngine,
+        *,
+        scan_only: bool = False,
     ) -> dict:
         settings = self.settings
         report: dict = {
@@ -68,9 +70,15 @@ class FuturesTradingEngine:
         }
 
         try:
-            if not self.broker.get_trading_status_ok(inst.uid):
-                report["reason"] = "Торговля недоступна (биржа закрыта или инструмент недоступен)"
-                return report
+            market_open = self.broker.get_trading_status_ok(inst.uid)
+            if not market_open:
+                if scan_only:
+                    report["market_open"] = False
+                else:
+                    report["reason"] = "Торговля недоступна (биржа закрыта или инструмент недоступен)"
+                    return report
+            else:
+                report["market_open"] = True
 
             df = self.broker.get_candles(inst.uid, CandleInterval.CANDLE_INTERVAL_HOUR, days=45)
             if df.empty or len(df) < 60:
@@ -123,9 +131,12 @@ class FuturesTradingEngine:
                     report["reason"] = f"Уже есть позиция {pos.direction} {pos.lots} лот."
                     return report
 
-            if settings.trading_mode == TradingMode.PAPER:
+            if settings.trading_mode == TradingMode.PAPER or scan_only:
                 report["action"] = "paper_signal"
-                report["reason"] = f"PAPER: {signal.direction.value.upper()} {decision.lots} лот."
+                prefix = "СКАН" if scan_only else "PAPER"
+                report["reason"] = f"{prefix}: {signal.direction.value.upper()} {decision.lots} лот."
+                if scan_only and not market_open:
+                    report["reason"] += " Биржа сейчас закрыта — ордер не выставляется."
                 return report
 
             order_id = str(uuid4())

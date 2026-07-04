@@ -72,17 +72,32 @@ def format_positions(snapshot: "AccountSnapshot") -> str:
 def format_scan_results(results: List[dict]) -> str:
     if not results:
         return "🔍 Скан завершён — нет данных."
-    lines = ["<b>🔍 Результаты скана</b>"]
+    lines = [
+        "<b>🔍 Результаты скана</b>",
+        "<i>Только анализ рынка, ордера не выставляются.</i>",
+        "",
+    ]
     for r in results:
         ticker = r.get("ticker", "?")
         action = r.get("action", "?")
         direction = r.get("direction", "-")
         conf = r.get("confidence", "-")
         reason = r.get("reason", r.get("risk_reason", ""))
-        lines.append(f"\n<b>{ticker}</b> · {action} · {direction} · conf {conf}")
+        market = r.get("market_open")
+        market_tag = ""
+        if market is False:
+            market_tag = " 🔒биржа закрыта"
+        elif market is True:
+            market_tag = " 🟢биржа открыта"
+        lines.append(f"\n<b>{ticker}</b>{market_tag}")
+        lines.append(f"  {action} · {direction} · conf {conf}")
+        if r.get("trend"):
+            lines.append(
+                f"  trend={r.get('trend')} ADX={r.get('adx')} RSI={r.get('rsi')} vol={r.get('volatility')}"
+            )
         if r.get("entry"):
             lines.append(f"  Entry {r['entry']} SL {r.get('sl')} TP {r.get('tp')}")
-        lines.append(f"  {reason[:120]}")
+        lines.append(f"  {reason[:160]}")
     return "\n".join(lines)
 
 

@@ -144,12 +144,12 @@ async def cmd_scan(
         return
     await message.answer("🔍 Запускаю скан...")
     try:
-        eff = controller.get_effective_settings(settings)
-        engine = FuturesTradingEngine(eff, broker)
-        results = await engine.run_cycle()
+        engine = FuturesTradingEngine(settings, broker, controller)
+        results = await engine.run_cycle(scan_only=True)
         controller.record_cycle(results)
         await message.answer(format_scan_results(results), parse_mode="HTML")
     except Exception as exc:
+        logger.exception("Scan error")
         await message.answer(f"❌ {exc}")
 
 
