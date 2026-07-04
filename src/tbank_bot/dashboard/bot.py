@@ -48,6 +48,8 @@ async def cmd_start(message: Message, settings: Settings) -> None:
         await message.answer(_deny_msg())
         return
     uid = message.from_user.id
+    controller = get_controller()
+    controller.set_owner_chat_id(uid)
     extra = ""
     if not settings.telegram_chat_id:
         extra = f"\n\n🆔 Ваш chat_id: <code>{uid}</code>"

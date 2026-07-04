@@ -20,7 +20,7 @@ from tbank_bot.config import get_settings
 from tbank_bot.dashboard.bot import run_dashboard
 from tbank_bot.engine.trader import FuturesTradingEngine
 from tbank_bot.state.controller import get_controller
-from tbank_bot.telegram_notify import format_cycle_report, send_telegram_message
+from tbank_bot.telegram_notify import format_cycle_report, notify_user
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,23 +30,20 @@ logger = logging.getLogger("tbank_bot")
 
 
 async def run_once(settings, broker, controller) -> None:
-    engine = FuturesTradingEngine(settings, broker, controller)
+    tracker_path = ROOT / "data" / "positions.json"
+    engine = FuturesTradingEngine(settings, broker, controller, tracker_path=tracker_path)
     controller.start()
     results = await engine.run_cycle()
     controller.record_cycle(results)
     for r in results:
         print(r)
-        if settings.telegram_enabled:
-            text = format_cycle_report(r)
-            await send_telegram_message(
-                settings.telegram_bot_token,
-                settings.telegram_chat_id,
-                text,
-            )
+        if settings.has_notification_target(controller.owner_chat_id):
+            await notify_user(settings, controller, format_cycle_report(r))
 
 
 async def run_with_dashboard(settings, broker, controller) -> None:
-    engine = FuturesTradingEngine(settings, broker, controller)
+    tracker_path = ROOT / "data" / "positions.json"
+    engine = FuturesTradingEngine(settings, broker, controller, tracker_path=tracker_path)
     await asyncio.gather(
         engine.run_forever(),
         run_dashboard(settings, broker, controller),
@@ -56,7 +53,8 @@ async def run_with_dashboard(settings, broker, controller) -> None:
 async def run_headless(settings, broker, controller) -> None:
     """Без Telegram — сразу стартует цикл."""
     controller.start()
-    engine = FuturesTradingEngine(settings, broker, controller)
+    tracker_path = ROOT / "data" / "positions.json"
+    engine = FuturesTradingEngine(settings, broker, controller, tracker_path=tracker_path)
     await engine.run_forever()
 
 

@@ -23,6 +23,15 @@ from tbank_bot.config import Settings
 
 
 @dataclass
+class OrderFill:
+    order_id: str
+    executed_price: float
+    total_amount: float
+    commission: float
+    lots_executed: int
+
+
+@dataclass
 class FutureInstrument:
     figi: str
     uid: str
@@ -206,7 +215,7 @@ class TBankBroker:
         lots: int,
         direction: OrderDirection,
         order_id: str,
-    ) -> str:
+    ) -> OrderFill:
         with self._client() as client:
             resp = client.orders.post_order(
                 instrument_id=instrument_uid,
@@ -216,7 +225,16 @@ class TBankBroker:
                 order_type=OrderType.ORDER_TYPE_MARKET,
                 order_id=order_id,
             )
-            return resp.order_id
+            executed = float(money_to_decimal(resp.executed_order_price)) if resp.executed_order_price else 0.0
+            total = float(money_to_decimal(resp.total_order_amount)) if resp.total_order_amount else 0.0
+            commission = float(money_to_decimal(resp.executed_commission)) if resp.executed_commission else 0.0
+            return OrderFill(
+                order_id=resp.order_id,
+                executed_price=executed,
+                total_amount=total,
+                commission=commission,
+                lots_executed=int(resp.lots_executed or lots),
+            )
 
     def post_stop_loss(
         self,
@@ -240,6 +258,29 @@ class TBankBroker:
             )
             return resp.stop_order_id
 
+    def post_take_profit(
+        self,
+        account_id: str,
+        instrument_uid: str,
+        lots: int,
+        take_price: float,
+        direction: StopOrderDirection,
+        order_id: str,
+    ) -> str:
+        with self._client() as client:
+            resp = client.stop_orders.post_stop_order(
+                instrument_id=instrument_uid,
+                quantity=lots,
+                price=_q(take_price),
+                stop_price=_q(take_price),
+                direction=direction,
+                account_id=account_id,
+                expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+                stop_order_type=StopOrderType.STOP_ORDER_TYPE_TAKE_PROFIT,
+                order_id=order_id,
+            )
+            return resp.stop_order_id
+
     def close_position_market(
         self,
         account_id: str,
@@ -249,7 +290,8 @@ class TBankBroker:
         order_id: str,
     ) -> str:
         direction = OrderDirection.ORDER_DIRECTION_SELL if is_long else OrderDirection.ORDER_DIRECTION_BUY
-        return self.post_market_order(account_id, instrument_uid, lots, direction, order_id)
+        fill = self.post_market_order(account_id, instrument_uid, lots, direction, order_id)
+        return fill.order_id
 
 
 def _map_future(f: Future) -> FutureInstrument:

@@ -95,6 +95,10 @@ def format_scan_results(results: List[dict]) -> str:
             lines.append(
                 f"  trend={r.get('trend')} ADX={r.get('adx')} RSI={r.get('rsi')} vol={r.get('volatility')}"
             )
+        if r.get("margin"):
+            lines.append(f"  ГО ~{r['margin']:,.0f} ₽")
+        if r.get("structure_summary"):
+            lines.append(f"  📐 {r['structure_summary'][:140]}")
         if r.get("entry"):
             lines.append(f"  Entry {r['entry']} SL {r.get('sl')} TP {r.get('tp')}")
         lines.append(f"  {reason[:160]}")

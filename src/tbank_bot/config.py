@@ -65,7 +65,14 @@ class Settings(BaseSettings):
 
     @property
     def telegram_enabled(self) -> bool:
-        return bool(self.telegram_bot_token and self.telegram_chat_id)
+        return bool(self.telegram_bot_token)
+
+    def has_notification_target(self, owner_chat_id: str | None = None) -> bool:
+        return bool(
+            self.telegram_chat_id
+            or self.admin_id_list
+            or owner_chat_id
+        )
 
 
 def get_settings() -> Settings:

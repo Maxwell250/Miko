@@ -44,7 +44,11 @@ class BotController:
         self.last_cycle_at: Optional[datetime] = None
         self.cycles_total: int = 0
         self.started_at: Optional[datetime] = None
+        self.owner_chat_id: Optional[int] = None
         self._run_event = asyncio.Event()
+
+    def set_owner_chat_id(self, chat_id: int) -> None:
+        self.owner_chat_id = chat_id
 
     def get_effective_settings(self, base: Settings) -> Settings:
         return self.overrides.apply(base)
