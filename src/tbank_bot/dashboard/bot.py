@@ -17,27 +17,45 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-def _allowed(user_id: int, settings: Settings) -> bool:
-    if settings.telegram_chat_id and str(user_id) == str(settings.telegram_chat_id):
+def _allowed(user_id: int, settings: Settings, username: str | None = None) -> bool:
+    allowed_ids: list[str] = []
+    if settings.telegram_chat_id:
+        allowed_ids.append(str(settings.telegram_chat_id))
+    allowed_ids.extend(settings.admin_id_list)
+
+    has_restrictions = bool(allowed_ids or settings.allowed_username_list)
+    if str(user_id) in allowed_ids:
         return True
-    if settings.admin_id_list and str(user_id) in settings.admin_id_list:
-        return True
-    return not settings.telegram_chat_id and not settings.telegram_admin_ids
+    if username and settings.allowed_username_list:
+        uname = username.lstrip("@").lower()
+        if uname in settings.allowed_username_list:
+            return True
+    return not has_restrictions
 
 
 def _deny_msg() -> str:
-    return "⛔ Нет доступа. Укажите TELEGRAM_CHAT_ID или TELEGRAM_ADMIN_IDS в .env"
+    return "⛔ Нет доступа. Этот бот доступен только владельцу."
+
+
+def _check_access(message_or_query, settings: Settings) -> bool:
+    user = message_or_query.from_user
+    return _allowed(user.id, settings, user.username)
 
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, settings: Settings) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
+    uid = message.from_user.id
+    extra = ""
+    if not settings.telegram_chat_id:
+        extra = f"\n\n🆔 Ваш chat_id: <code>{uid}</code>"
     await message.answer(
         "👋 <b>T-Bank Futures Bot Dashboard</b>\n\n"
         "Используйте кнопки ниже или /help для команд.\n"
-        "По умолчанию бот <b>остановлен</b> — нажмите ▶️ Старт.",
+        "По умолчанию бот <b>остановлен</b> — нажмите ▶️ Старт."
+        f"{extra}",
         reply_markup=main_menu_keyboard(),
         parse_mode="HTML",
     )
@@ -46,7 +64,7 @@ async def cmd_start(message: Message, settings: Settings) -> None:
 @router.message(Command("help"))
 @router.message(F.text == "❓ Помощь")
 async def cmd_help(message: Message, settings: Settings) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     await message.answer(format_help(), parse_mode="HTML")
@@ -55,7 +73,7 @@ async def cmd_help(message: Message, settings: Settings) -> None:
 @router.message(Command("start_bot"))
 @router.message(F.text == "▶️ Старт")
 async def cmd_start_bot(message: Message, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     msg = controller.start()
@@ -65,7 +83,7 @@ async def cmd_start_bot(message: Message, settings: Settings, controller: BotCon
 @router.message(Command("stop_bot"))
 @router.message(F.text == "⏹ Стоп")
 async def cmd_stop_bot(message: Message, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     msg = controller.stop()
@@ -80,7 +98,7 @@ async def cmd_status(
     broker: TBankBroker,
     controller: BotController,
 ) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     snapshot = None
@@ -99,7 +117,7 @@ async def cmd_status(
 @router.message(Command("positions"))
 @router.message(F.text == "📈 Позиции")
 async def cmd_positions(message: Message, settings: Settings, broker: TBankBroker) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     if not settings.tbank_token:
@@ -121,7 +139,7 @@ async def cmd_scan(
     broker: TBankBroker,
     controller: BotController,
 ) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     await message.answer("🔍 Запускаю скан...")
@@ -138,7 +156,7 @@ async def cmd_scan(
 @router.message(Command("settings"))
 @router.message(F.text == "⚙️ Настройки")
 async def cmd_settings(message: Message, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     eff = controller.get_effective_settings(settings)
@@ -148,7 +166,7 @@ async def cmd_settings(message: Message, settings: Settings, controller: BotCont
 
 @router.message(Command("mode"))
 async def cmd_mode(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     if not command.args or command.args not in ("paper", "live"):
@@ -160,7 +178,7 @@ async def cmd_mode(message: Message, command: CommandObject, settings: Settings,
 
 @router.message(Command("risk"))
 async def cmd_risk(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     try:
@@ -173,7 +191,7 @@ async def cmd_risk(message: Message, command: CommandObject, settings: Settings,
 
 @router.message(Command("confidence"))
 async def cmd_confidence(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     try:
@@ -186,7 +204,7 @@ async def cmd_confidence(message: Message, command: CommandObject, settings: Set
 
 @router.message(Command("interval"))
 async def cmd_interval(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     try:
@@ -199,7 +217,7 @@ async def cmd_interval(message: Message, command: CommandObject, settings: Setti
 
 @router.message(Command("tickers"))
 async def cmd_tickers(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     val = (command.args or "").strip().upper()
@@ -209,7 +227,7 @@ async def cmd_tickers(message: Message, command: CommandObject, settings: Settin
 
 @router.message(Command("sl"))
 async def cmd_sl(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     try:
@@ -222,7 +240,7 @@ async def cmd_sl(message: Message, command: CommandObject, settings: Settings, c
 
 @router.message(Command("tp"))
 async def cmd_tp(message: Message, command: CommandObject, settings: Settings, controller: BotController) -> None:
-    if not _allowed(message.from_user.id, settings):
+    if not _check_access(message, settings):
         await message.answer(_deny_msg())
         return
     try:
@@ -239,7 +257,7 @@ async def on_settings_callback(
     settings: Settings,
     controller: BotController,
 ) -> None:
-    if not _allowed(query.from_user.id, settings):
+    if not _check_access(query, settings):
         await query.answer("Нет доступа", show_alert=True)
         return
 

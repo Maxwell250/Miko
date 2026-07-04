@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
     telegram_admin_ids: str = Field(default="", alias="TELEGRAM_ADMIN_IDS")
+    telegram_allowed_usernames: str = Field(default="", alias="TELEGRAM_ALLOWED_USERNAMES")
 
     loop_interval_sec: int = Field(default=300, alias="LOOP_INTERVAL_SEC")
 
@@ -45,6 +46,16 @@ class Settings(BaseSettings):
         if not self.telegram_admin_ids.strip():
             return []
         return [x.strip() for x in self.telegram_admin_ids.split(",") if x.strip()]
+
+    @property
+    def allowed_username_list(self) -> List[str]:
+        if not self.telegram_allowed_usernames.strip():
+            return []
+        return [
+            x.strip().lstrip("@").lower()
+            for x in self.telegram_allowed_usernames.split(",")
+            if x.strip()
+        ]
 
     @property
     def futures_ticker_list(self) -> List[str]:

@@ -30,8 +30,9 @@
 
 ```env
 TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=ваш_chat_id
-TELEGRAM_ADMIN_IDS=123456789   # опционально, через запятую
+TELEGRAM_CHAT_ID=ваш_chat_id          # для уведомлений о сделках
+TELEGRAM_ADMIN_IDS=123456789          # опционально, через запятую
+TELEGRAM_ALLOWED_USERNAMES=MaxWell_xR # доступ к дашборду по @username
 ```
 
 ## Быстрый старт
@@ -82,8 +83,10 @@ TRADING_MODE=live TBANK_SANDBOX=true PYTHONPATH=src python src/tbank_bot/main.py
 | `TBANK_FUTURES_TICKERS` | Тикеры через запятую (пусто = Si + RTS) |
 | `MAX_RISK_PER_TRADE_PCT` | Риск на сделку, % от портфеля |
 | `MAX_DAILY_LOSS_PCT` | Kill-switch при дневном убытке |
-| `TELEGRAM_BOT_TOKEN` | Опционально |
-| `TELEGRAM_CHAT_ID` | Опционально |
+| `TELEGRAM_BOT_TOKEN` | Токен бота для дашборда |
+| `TELEGRAM_CHAT_ID` | Chat ID для уведомлений о сделках |
+| `TELEGRAM_ADMIN_IDS` | Доп. admin ID через запятую |
+| `TELEGRAM_ALLOWED_USERNAMES` | Доступ к дашборду по @username (через запятую) |
 
 ## Архитектура
 
