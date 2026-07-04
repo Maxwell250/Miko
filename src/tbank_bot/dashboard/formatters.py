@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
+from tbank_bot.telegram_html import escape_html
+
 if TYPE_CHECKING:
     from tbank_bot.broker.tbank import AccountSnapshot
     from tbank_bot.config import Settings
@@ -25,7 +27,7 @@ def format_status(
     if controller.last_cycle_at:
         lines.append(f"Последний цикл: {controller.last_cycle_at.strftime('%H:%M:%S UTC')}")
     if controller.last_error:
-        lines.append(f"⚠️ Ошибка: {controller.last_error[:200]}")
+        lines.append(f"⚠️ Ошибка: {escape_html(controller.last_error[:200])}")
 
     lines.extend(
         [
@@ -78,11 +80,11 @@ def format_scan_results(results: List[dict]) -> str:
         "",
     ]
     for r in results:
-        ticker = r.get("ticker", "?")
-        action = r.get("action", "?")
-        direction = r.get("direction", "-")
-        conf = r.get("confidence", "-")
-        reason = r.get("reason", r.get("risk_reason", ""))
+        ticker = escape_html(r.get("ticker", "?"))
+        action = escape_html(r.get("action", "?"))
+        direction = escape_html(r.get("direction", "-"))
+        conf = escape_html(r.get("confidence", "-"))
+        reason = escape_html(r.get("reason", r.get("risk_reason", "")))
         market = r.get("market_open")
         market_tag = ""
         if market is False:
@@ -90,20 +92,29 @@ def format_scan_results(results: List[dict]) -> str:
         elif market is True:
             market_tag = " 🟢биржа открыта"
         lines.append(f"\n<b>{ticker}</b>{market_tag}")
-        lines.append(f"  {action} · {direction} · conf {conf} · score {r.get('rank_score', '-')}")
+        lines.append(
+            f"  {action} · {direction} · conf {conf} · score {escape_html(r.get('rank_score', '-'))}"
+        )
         if r.get("regime"):
-            lines.append(f"  режим={r.get('regime')} · сессия={r.get('session', '-')}")
+            lines.append(
+                f"  режим={escape_html(r.get('regime'))} · сессия={escape_html(r.get('session', '-'))}"
+            )
         if r.get("trend"):
             lines.append(
-                f"  trend={r.get('trend')} ADX={r.get('adx')} RSI={r.get('rsi')} vol={r.get('volatility')}"
+                f"  trend={escape_html(r.get('trend'))} ADX={escape_html(r.get('adx'))} "
+                f"RSI={escape_html(r.get('rsi'))} vol={escape_html(r.get('volatility'))}"
             )
         if r.get("margin"):
-            lines.append(f"  ГО ~{r['margin']:,.0f} ₽")
+            margin_txt = f"{r['margin']:,.0f} ₽"
+            lines.append(f"  ГО ~{escape_html(margin_txt)}")
         if r.get("structure_summary"):
-            lines.append(f"  📐 {r['structure_summary'][:140]}")
+            lines.append(f"  📐 {escape_html(r['structure_summary'][:140])}")
         if r.get("entry"):
-            lines.append(f"  Entry {r['entry']} SL {r.get('sl')} TP {r.get('tp')}")
-        lines.append(f"  {reason[:160]}")
+            lines.append(
+                f"  Entry {escape_html(r['entry'])} SL {escape_html(r.get('sl'))} "
+                f"TP {escape_html(r.get('tp'))}"
+            )
+        lines.append(f"  {reason[:200]}")
     return "\n".join(lines)
 
 
