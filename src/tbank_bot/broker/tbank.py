@@ -97,11 +97,13 @@ class TBankBroker:
                 items.append(inst)
             return sorted(items, key=lambda x: x.expiration_date)
 
-    def resolve_default_futures(self) -> List[FutureInstrument]:
+    def resolve_default_futures(self, settings: Settings | None = None) -> list[FutureInstrument]:
         """Ближайшие ликвидные фьючерсы Si (USD/RUB) и RTS (индекс)."""
+        s = settings or self.settings
         all_f = self.list_futures()
-        if self.settings.futures_ticker_list:
-            return self.list_futures(self.settings.futures_ticker_list)
+        tickers = s.futures_ticker_list
+        if tickers:
+            return self.list_futures(tickers)
 
         selected: List[FutureInstrument] = []
         for prefix in ("SI", "RI"):

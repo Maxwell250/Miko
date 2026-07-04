@@ -11,6 +11,28 @@
 - Режимы: `paper` (без ордеров) и `live` (реальные заявки)
 - **Sandbox** T-Bank по умолчанию
 - Уведомления в Telegram (опционально)
+- **Telegram-дашборд**: старт/стоп, статус, настройки, скан
+
+## Telegram Dashboard
+
+Бот запускается с панелью управления в Telegram:
+
+| Кнопка / команда | Действие |
+|------------------|----------|
+| ▶️ Старт / `/start_bot` | Запуск торгового цикла |
+| ⏹ Стоп / `/stop_bot` | Остановка цикла |
+| 🔍 Скан / `/scan` | Один цикл анализа сейчас |
+| 📊 Статус / `/status` | Состояние, risk, портфель |
+| 📈 Позиции / `/positions` | Открытые фьючерсы |
+| ⚙️ Настройки | Inline-кнопки risk/conf/interval/mode |
+
+Текстовые команды: `/mode paper`, `/risk 1.0`, `/confidence 65`, `/interval 300`, `/tickers SiH5,RIH5`, `/sl 1.5`, `/tp 3.0`
+
+```env
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=ваш_chat_id
+TELEGRAM_ADMIN_IDS=123456789   # опционально, через запятую
+```
 
 ## Быстрый старт
 
@@ -35,13 +57,16 @@ export PYTHONPATH=src
 python src/tbank_bot/main.py --once
 ```
 
-### 4. Непрерывная работа
+### 4. Запуск с Telegram-дашбордом
 
 ```bash
-TRADING_MODE=paper TBANK_SANDBOX=true PYTHONPATH=src python src/tbank_bot/main.py
+# TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID в .env
+PYTHONPATH=src python src/tbank_bot/main.py
 ```
 
-### 5. Live (осторожно!)
+В Telegram: `/start` → ▶️ Старт / ⏹ Стоп / ⚙️ Настройки
+
+### 5. Live (осторожно, после sandbox!)
 
 ```bash
 TRADING_MODE=live TBANK_SANDBOX=true PYTHONPATH=src python src/tbank_bot/main.py
@@ -68,7 +93,9 @@ src/tbank_bot/
 ├── strategy/            # Сигналы long/short + market context
 ├── risk/engine.py       # Risk management
 ├── engine/trader.py     # Торговый цикл
-└── main.py              # Entry point
+├── dashboard/         # Telegram UI (старт/стоп/настройки)
+├── state/controller.py # Runtime state
+└── main.py
 src/tinkoff/             # Vendored T-Bank gRPC SDK
 ```
 
