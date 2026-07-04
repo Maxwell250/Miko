@@ -12,5 +12,6 @@ build/
 .DS_Store
 data/cache/
 data/secrets/
+vendor/
 *.sqlite
 *.db
