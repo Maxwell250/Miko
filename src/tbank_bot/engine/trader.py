@@ -13,7 +13,9 @@ from tbank_bot.config import Settings, TradingMode
 from tbank_bot.risk.engine import RiskEngine
 from tbank_bot.state.controller import BotController
 from tbank_bot.state.position_tracker import CloseEvent, PositionTracker
-from tbank_bot.strategy.futures_strategy import SignalDirection, generate_signal
+from tbank_bot.strategy.futures_strategy import SignalDirection
+from tbank_bot.strategy.moex_session import analyze_moex_session
+from tbank_bot.strategy.rf_optimal import generate_rf_signal, rank_opportunity
 from tbank_bot.telegram_notify import (
     format_close_notification,
     format_cycle_report,
@@ -148,14 +150,52 @@ class FuturesTradingEngine:
             live_closed = await self._sync_live_closes(snapshot, account_id)
             await self._notify_closes(paper_closed + live_closed)
 
-        instruments = self.broker.resolve_default_futures(settings)
+        instruments = self.broker.resolve_tradeable_futures(settings, snapshot.available)
         results: list[dict] = []
         risk = self._risk()
+        ranked: list[tuple[float, dict]] = []
+
         for inst in instruments:
             result = await self._process_instrument(
-                account_id, snapshot, inst, risk, scan_only=scan_only
+                account_id,
+                snapshot,
+                inst,
+                risk,
+                scan_only=scan_only,
+                allow_execute=False,
             )
             results.append(result)
+            ranked.append((float(result.get("rank_score", 0)), result))
+
+        if not scan_only:
+            open_slots = max(
+                0,
+                settings.max_open_positions
+                - len(snapshot.positions)
+                - sum(1 for p in self.tracker.positions.values()),
+            )
+            ranked.sort(key=lambda x: x[0], reverse=True)
+            for score, result in ranked:
+                if open_slots <= 0:
+                    break
+                if result.get("action") != "candidate":
+                    continue
+                if not result.get("risk_ok"):
+                    continue
+                if result.get("direction") in (None, "flat", "-"):
+                    continue
+                inst_match = next(i for i in instruments if i.ticker == result["ticker"])
+                idx = results.index(result)
+                results[idx] = await self._process_instrument(
+                    account_id,
+                    snapshot,
+                    inst_match,
+                    risk,
+                    scan_only=False,
+                    allow_execute=True,
+                )
+                open_slots -= 1
+
         return results
 
     async def _process_instrument(
@@ -166,6 +206,7 @@ class FuturesTradingEngine:
         risk: RiskEngine,
         *,
         scan_only: bool = False,
+        allow_execute: bool = True,
     ) -> dict:
         settings = self.settings
         struct_summary = ""
@@ -186,16 +227,34 @@ class FuturesTradingEngine:
             else:
                 report["market_open"] = True
 
-            df = self.broker.get_candles(inst.uid, CandleInterval.CANDLE_INTERVAL_HOUR, days=45)
-            if df.empty or len(df) < 60:
+            df_h1 = self.broker.get_candles(inst.uid, CandleInterval.CANDLE_INTERVAL_HOUR, days=45)
+            if df_h1.empty or len(df_h1) < 60:
                 report["reason"] = "Недостаточно свечей"
                 return report
 
-            signal = generate_signal(
-                df,
-                stop_atr_mult=settings.default_stop_atr_mult,
-                tp_atr_mult=settings.default_tp_atr_mult,
-            )
+            df_m15 = self.broker.get_candles(inst.uid, CandleInterval.CANDLE_INTERVAL_15_MIN, days=12)
+
+            session = analyze_moex_session()
+            if settings.moex_main_session_only and not session.in_main_session and not scan_only:
+                report["reason"] = session.skip_reason or "Вне основной сессии MOEX"
+                report["session"] = session.label
+                return report
+
+            if settings.strategy_profile == "moex_optimal":
+                signal = generate_rf_signal(
+                    df_h1,
+                    df_m15 if not df_m15.empty else None,
+                    stop_atr_mult=settings.default_stop_atr_mult,
+                    tp_atr_mult=settings.default_tp_atr_mult,
+                )
+            else:
+                from tbank_bot.strategy.futures_strategy import generate_signal
+
+                signal = generate_signal(
+                    df_h1,
+                    stop_atr_mult=settings.default_stop_atr_mult,
+                    tp_atr_mult=settings.default_tp_atr_mult,
+                )
             if not signal:
                 report["reason"] = "Сигнал не сгенерирован"
                 return report
@@ -205,10 +264,20 @@ class FuturesTradingEngine:
             struct_summary = self._structure_summary(signal)
 
             initial_margin, step_amount = self.broker.get_futures_margin(inst.uid)
-            decision = risk.evaluate(signal, snapshot, initial_margin, price)
+            decision = risk.evaluate(
+                signal, snapshot, initial_margin, price, step_amount=step_amount
+            )
 
-            margin_total = initial_margin * decision.lots
-            notional = price * decision.lots * max(step_amount, 1)
+            margin_total = initial_margin * max(decision.lots, 1)
+            notional = price * max(decision.lots, 1) * max(step_amount, 1)
+
+            opp = rank_opportunity(
+                inst.ticker,
+                signal,
+                initial_margin,
+                snapshot.available,
+                session=session,
+            )
 
             report.update(
                 {
@@ -224,6 +293,10 @@ class FuturesTradingEngine:
                     "volatility": signal.context.volatility_regime,
                     "structure_summary": struct_summary,
                     "structure_pattern": signal.context.structure.pattern if signal.context.structure else "",
+                    "regime": opp.regime,
+                    "session": session.label,
+                    "rank_score": round(opp.score, 1),
+                    "affordable": opp.affordable,
                     "risk_ok": decision.allowed,
                     "risk_reason": decision.reason,
                     "lots": decision.lots,
@@ -247,6 +320,26 @@ class FuturesTradingEngine:
 
             if self.tracker.get(inst.figi):
                 report["reason"] = "Позиция уже отслеживается ботом"
+                return report
+
+            would_trade = (
+                decision.allowed
+                and signal.direction != SignalDirection.FLAT
+                and opp.affordable
+            )
+
+            if not allow_execute:
+                if would_trade and not scan_only:
+                    report["action"] = "candidate"
+                    report["reason"] = (
+                        f"Кандидат {signal.direction.value.upper()} "
+                        f"score={opp.score:.0f} conf={signal.confidence:.0f}%"
+                    )
+                elif scan_only and would_trade:
+                    report["action"] = "paper_signal"
+                    report["reason"] = f"СКАН: {signal.direction.value.upper()} score={opp.score:.0f}"
+                else:
+                    report["reason"] = decision.reason if not decision.allowed else signal.reason
                 return report
 
             if settings.trading_mode == TradingMode.PAPER or scan_only:

@@ -90,7 +90,9 @@ def format_scan_results(results: List[dict]) -> str:
         elif market is True:
             market_tag = " 🟢биржа открыта"
         lines.append(f"\n<b>{ticker}</b>{market_tag}")
-        lines.append(f"  {action} · {direction} · conf {conf}")
+        lines.append(f"  {action} · {direction} · conf {conf} · score {r.get('rank_score', '-')}")
+        if r.get("regime"):
+            lines.append(f"  режим={r.get('regime')} · сессия={r.get('session', '-')}")
         if r.get("trend"):
             lines.append(
                 f"  trend={r.get('trend')} ADX={r.get('adx')} RSI={r.get('rsi')} vol={r.get('volatility')}"

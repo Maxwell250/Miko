@@ -121,6 +121,48 @@ class TBankBroker:
                 selected.append(candidates[0])
         return selected or all_f[:2]
 
+    def resolve_tradeable_futures(
+        self,
+        settings: Settings | None = None,
+        available: float | None = None,
+    ) -> list[FutureInstrument]:
+        """Инструменты MOEX, доступные по марже + приоритет ликвидным РФ."""
+        s = settings or self.settings
+        if s.futures_ticker_list:
+            return self.list_futures(s.futures_ticker_list)
+
+        all_f = self.list_futures()
+        priority_prefixes = ("SI", "RI", "MX", "CN", "BR", "GD")
+        scored: list[tuple[float, FutureInstrument]] = []
+
+        for inst in all_f:
+            try:
+                margin, _ = self.get_futures_margin(inst.uid)
+            except Exception:
+                continue
+            if available is not None and margin > available * 0.95:
+                continue
+            prefix = inst.ticker.upper()[:2]
+            prio = priority_prefixes.index(prefix) if prefix in priority_prefixes else 99
+            scored.append((prio * 1000 + margin, inst))
+
+        scored.sort(key=lambda x: x[0])
+        picked = [inst for _, inst in scored[:6]]
+
+        if not picked:
+            return self.resolve_default_futures(s)
+
+        # Берём по одному на префикс из доступных
+        seen: set[str] = set()
+        result: list[FutureInstrument] = []
+        for inst in picked:
+            p = inst.ticker.upper()[:2]
+            if p in seen:
+                continue
+            seen.add(p)
+            result.append(inst)
+        return result[:4] or self.resolve_default_futures(s)
+
     def get_candles(
         self,
         instrument_uid: str,
