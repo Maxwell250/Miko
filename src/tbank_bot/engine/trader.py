@@ -15,6 +15,7 @@ from tbank_bot.state.controller import BotController
 from tbank_bot.state.position_tracker import CloseEvent, PositionTracker
 from tbank_bot.strategy.futures_strategy import SignalDirection
 from tbank_bot.strategy.moex_session import analyze_moex_session
+from tbank_bot.strategy.range_corridor import generate_range_corridor_signal
 from tbank_bot.strategy.rf_optimal import generate_rf_signal, rank_opportunity
 from tbank_bot.telegram_notify import (
     format_close_notification,
@@ -247,7 +248,17 @@ class FuturesTradingEngine:
                 report["session"] = session.label
                 return report
 
-            if settings.strategy_profile == "moex_optimal":
+            if settings.strategy_profile == "range_corridor":
+                signal = generate_range_corridor_signal(
+                    df_h1,
+                    df_m15 if not df_m15.empty else None,
+                    lookback=settings.range_lookback_bars,
+                    entry_zone_pct=settings.range_entry_zone_pct,
+                    min_width_pct=settings.range_min_width_pct,
+                    max_width_pct=settings.range_max_width_pct,
+                    max_adx=settings.range_max_adx,
+                )
+            elif settings.strategy_profile == "moex_optimal":
                 signal = generate_rf_signal(
                     df_h1,
                     df_m15 if not df_m15.empty else None,
@@ -300,7 +311,7 @@ class FuturesTradingEngine:
                     "volatility": signal.context.volatility_regime,
                     "structure_summary": struct_summary,
                     "structure_pattern": signal.context.structure.pattern if signal.context.structure else "",
-                    "regime": opp.regime,
+                    "regime": opp.regime if settings.strategy_profile != "range_corridor" else "range",
                     "session": session.label,
                     "rank_score": round(opp.score, 1),
                     "affordable": opp.affordable,

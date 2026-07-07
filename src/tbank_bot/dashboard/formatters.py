@@ -123,7 +123,8 @@ def format_scan_results(results: List[dict]) -> str:
                 f"  Entry {escape_html(r['entry'])} SL {escape_html(r.get('sl'))} "
                 f"TP {escape_html(r.get('tp'))}"
             )
-        lines.append(f"  {reason[:200]}")
+        if r.get("reason"):
+            lines.append(f"  {escape_html(r['reason'][:200])}")
     return "\n".join(lines)
 
 

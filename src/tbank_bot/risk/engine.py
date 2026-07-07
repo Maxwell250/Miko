@@ -105,7 +105,9 @@ class RiskEngine:
             )
 
         rr = abs(signal.take_profit - signal.entry_price) / stop_dist
-        min_rr = 1.8 if self.settings.strategy_profile == "moex_optimal" else 1.5
+        min_rr = 1.2 if self.settings.strategy_profile == "range_corridor" else (
+            1.8 if self.settings.strategy_profile == "moex_optimal" else 1.5
+        )
         if rr < min_rr:
             return RiskDecision(False, 0, f"R:R {rr:.2f} < {min_rr}")
 
