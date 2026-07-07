@@ -28,6 +28,14 @@ def format_status(
         lines.append(f"Последний цикл: {controller.last_cycle_at.strftime('%H:%M:%S UTC')}")
     if controller.last_error:
         lines.append(f"⚠️ Ошибка: {escape_html(controller.last_error[:200])}")
+    if controller.last_results:
+        lines.append("")
+        lines.append("<b>Последний цикл</b>")
+        for r in controller.last_results[:3]:
+            lines.append(
+                f"• {r.get('ticker', '?')}: {r.get('action', '?')} — "
+                f"{(r.get('reason') or '')[:80]}"
+            )
 
     lines.extend(
         [
@@ -42,8 +50,9 @@ def format_status(
         ]
     )
 
-    tickers = eff.futures_ticker_list or ["Si + RTS (авто)"]
+    tickers = eff.futures_ticker_list or ["авто MOEX (по марже)"]
     lines.append(f"• Тикеры: {', '.join(tickers)}")
+    lines.append(f"• Стратегия: <code>{getattr(eff, 'strategy_profile', 'moex_optimal')}</code>")
 
     if snapshot:
         lines.extend(

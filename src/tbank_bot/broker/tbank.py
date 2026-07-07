@@ -72,9 +72,13 @@ def _from_q(q: Quotation) -> float:
 class TBankBroker:
     """Обёртка над T-Bank Invest gRPC API для фьючерсов."""
 
+    MOEX_PRIORITY = ("CNYRUBF", "SI", "RI", "MX", "CN", "BR", "GD", "SR")
+    BLOCKED_TICKER_PARTS = ("PERP", "HOOD", "CRWD", "BTC", "ETH", "AAPL", "TSLA", "INTC", "GOOGL")
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._target = INVEST_GRPC_API_SANDBOX if settings.tbank_sandbox else INVEST_GRPC_API
+        self._margin_cache: dict[str, tuple[float, float]] = {}
 
     def _client(self) -> Client:
         return Client(
@@ -121,47 +125,53 @@ class TBankBroker:
                 selected.append(candidates[0])
         return selected or all_f[:2]
 
+    @classmethod
+    def _is_moex_futures_ticker(cls, ticker: str) -> bool:
+        t = ticker.upper()
+        if any(part in t for part in cls.BLOCKED_TICKER_PARTS):
+            return False
+        if t == "CNYRUBF":
+            return True
+        return t[:2] in ("SI", "RI", "MX", "CN", "BR", "GD", "SR", "NG", "SV", "ED")
+
+    def _priority_key(self, ticker: str) -> int:
+        t = ticker.upper()
+        for i, prefix in enumerate(self.MOEX_PRIORITY):
+            if t == prefix or t.startswith(prefix):
+                return i
+        return 99
+
     def resolve_tradeable_futures(
         self,
         settings: Settings | None = None,
         available: float | None = None,
     ) -> list[FutureInstrument]:
-        """Инструменты MOEX, доступные по марже + приоритет ликвидным РФ."""
+        """Ликвидные MOEX-фьючерсы, доступные по марже (без сотен API-запросов)."""
         s = settings or self.settings
         if s.futures_ticker_list:
-            return self.list_futures(s.futures_ticker_list)
+            return self.list_futures(s.futures_ticker_list)[:3]
 
-        all_f = self.list_futures()
-        priority_prefixes = ("SI", "RI", "MX", "CN", "BR", "GD")
-        scored: list[tuple[float, FutureInstrument]] = []
+        candidates = [
+            f for f in self.list_futures()
+            if self._is_moex_futures_ticker(f.ticker)
+        ]
+        candidates.sort(key=lambda f: (self._priority_key(f.ticker), f.expiration_date))
 
-        for inst in all_f:
+        affordable: list[FutureInstrument] = []
+        for inst in candidates[:20]:
             try:
                 margin, _ = self.get_futures_margin(inst.uid)
             except Exception:
                 continue
             if available is not None and margin > available * 0.95:
                 continue
-            prefix = inst.ticker.upper()[:2]
-            prio = priority_prefixes.index(prefix) if prefix in priority_prefixes else 99
-            scored.append((prio * 1000 + margin, inst))
+            affordable.append(inst)
+            if len(affordable) >= 2:
+                break
 
-        scored.sort(key=lambda x: x[0])
-        picked = [inst for _, inst in scored[:6]]
-
-        if not picked:
-            return self.resolve_default_futures(s)
-
-        # Берём по одному на префикс из доступных
-        seen: set[str] = set()
-        result: list[FutureInstrument] = []
-        for inst in picked:
-            p = inst.ticker.upper()[:2]
-            if p in seen:
-                continue
-            seen.add(p)
-            result.append(inst)
-        return result[:4] or self.resolve_default_futures(s)
+        if affordable:
+            return affordable
+        return self.resolve_default_futures(s)[:2]
 
     def get_candles(
         self,
@@ -242,13 +252,34 @@ class TBankBroker:
 
     def get_futures_margin(self, instrument_uid: str) -> tuple[float, float]:
         """initial margin on buy/sell per lot (RUB)."""
-        with self._client() as client:
-            m = client.instruments.get_futures_margin(instrument_id=instrument_uid)
-            initial_buy = float(money_to_decimal(m.initial_margin_on_buy))
-            initial_sell = float(money_to_decimal(m.initial_margin_on_sell))
-            initial = max(initial_buy, initial_sell)
-            step_amount = float(quotation_to_decimal(m.min_price_increment_amount))
-            return initial, step_amount
+        if instrument_uid in self._margin_cache:
+            return self._margin_cache[instrument_uid]
+
+        import time
+
+        from tinkoff.invest.exceptions import RequestError
+
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                with self._client() as client:
+                    m = client.instruments.get_futures_margin(instrument_id=instrument_uid)
+                    initial_buy = float(money_to_decimal(m.initial_margin_on_buy))
+                    initial_sell = float(money_to_decimal(m.initial_margin_on_sell))
+                    initial = max(initial_buy, initial_sell)
+                    step_amount = float(quotation_to_decimal(m.min_price_increment_amount))
+                    result = (initial, step_amount)
+                    self._margin_cache[instrument_uid] = result
+                    return result
+            except RequestError as exc:
+                last_err = exc
+                if "RESOURCE_EXHAUSTED" in str(exc) and attempt < 2:
+                    time.sleep(35)
+                    continue
+                raise
+        if last_err:
+            raise last_err
+        return 0.0, 1.0
 
     def post_market_order(
         self,

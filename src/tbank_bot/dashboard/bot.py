@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
 
@@ -313,7 +314,11 @@ async def on_settings_callback(
         controller.overrides.notify_signals = not current
         await query.answer(f"Сигналы: {'вкл' if not current else 'выкл'}")
 
-    await query.message.edit_reply_markup(reply_markup=settings_keyboard())
+    try:
+        await query.message.edit_reply_markup(reply_markup=settings_keyboard())
+    except TelegramBadRequest as exc:
+        if "message is not modified" not in str(exc).lower():
+            raise
 
 
 class DashboardBot:

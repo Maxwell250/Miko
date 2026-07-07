@@ -166,6 +166,7 @@ class FuturesTradingEngine:
             )
             results.append(result)
             ranked.append((float(result.get("rank_score", 0)), result))
+            await asyncio.sleep(0.3)
 
         if not scan_only:
             open_slots = max(
@@ -195,6 +196,10 @@ class FuturesTradingEngine:
                     allow_execute=True,
                 )
                 open_slots -= 1
+
+        if results:
+            actions = [f"{r.get('ticker')}: {r.get('action')}" for r in results]
+            logger.info("Цикл завершён: %s", " | ".join(actions))
 
         return results
 
@@ -232,7 +237,9 @@ class FuturesTradingEngine:
                 report["reason"] = "Недостаточно свечей"
                 return report
 
-            df_m15 = self.broker.get_candles(inst.uid, CandleInterval.CANDLE_INTERVAL_15_MIN, days=12)
+            df_m15 = self.broker.get_candles(
+                inst.uid, CandleInterval.CANDLE_INTERVAL_15_MIN, days=5
+            )
 
             session = analyze_moex_session()
             if settings.moex_main_session_only and not session.in_main_session and not scan_only:
