@@ -166,9 +166,8 @@ def generate_range_corridor_signal(
             confidence += 10
         reason_parts.append(f"LONG у поддержки ({corridor.position_pct:.0f}%)")
         sl = corridor.support - buffer
-        tp = corridor.mid
-        if corridor.width_pct < 0.8:
-            tp = corridor.resistance - buffer * 0.5
+        # В боковике цель — верх коридора
+        tp = corridor.resistance - buffer * 0.5
 
     # Верх коридора → SHORT
     elif corridor.position_pct >= (100 - entry_zone_pct) and rsi_val >= 52:
@@ -178,9 +177,8 @@ def generate_range_corridor_signal(
             confidence += 10
         reason_parts.append(f"SHORT у сопротивления ({corridor.position_pct:.0f}%)")
         sl = corridor.resistance + buffer
-        tp = corridor.mid
-        if corridor.width_pct < 0.8:
-            tp = corridor.support + buffer * 0.5
+        # В боковике цель — низ коридора
+        tp = corridor.support + buffer * 0.5
     else:
         return TradeSignal(
             direction=SignalDirection.FLAT,
