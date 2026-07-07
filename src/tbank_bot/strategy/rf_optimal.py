@@ -118,6 +118,7 @@ def generate_rf_signal(
     df_m15: pd.DataFrame | None = None,
     stop_atr_mult: float = 1.5,
     tp_atr_mult: float = 2.5,
+    strict_mtf: bool = True,
 ) -> Optional[TradeSignal]:
     """
     Оптимизированная стратегия для MOEX:
@@ -175,23 +176,27 @@ def generate_rf_signal(
 
     if regime == "trend" and signal.direction != SignalDirection.FLAT:
         if not mtf_ok:
-            signal = TradeSignal(
-                direction=SignalDirection.FLAT,
-                confidence=signal.confidence - 20,
-                entry_price=price,
-                stop_loss=price,
-                take_profit=price,
-                atr=ctx.atr,
-                context=ctx,
-                reason="Тренд без MTF-подтверждения",
-            )
+            if strict_mtf:
+                signal = TradeSignal(
+                    direction=SignalDirection.FLAT,
+                    confidence=signal.confidence - 20,
+                    entry_price=price,
+                    stop_loss=price,
+                    take_profit=price,
+                    atr=ctx.atr,
+                    context=ctx,
+                    reason="Тренд без MTF-подтверждения",
+                )
+            else:
+                signal.confidence -= 10
+                reason_parts.append("MTF не совпал (мягкий режим)")
         else:
             signal.confidence += 10
             reason_parts.append("тренд + MTF")
 
-    # Si/RTS: не лезем в экстремальную волатильность без тренда
+    # Волатильность: в мягком режиме не блокируем, только штрафуем
     if ctx.volatility_regime == "high" and regime != "trend":
-        signal.confidence -= 20
+        signal.confidence -= 12 if strict_mtf else 6
 
     signal.confidence = max(0.0, min(100.0, signal.confidence))
     signal.reason = "; ".join(reason_parts)

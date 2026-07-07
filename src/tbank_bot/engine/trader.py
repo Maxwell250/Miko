@@ -258,12 +258,34 @@ class FuturesTradingEngine:
                     max_width_pct=settings.range_max_width_pct,
                     max_adx=settings.range_max_adx,
                 )
+            elif settings.strategy_profile == "all_modes":
+                # Сначала пробуем боковик (если он есть), иначе тренд/MTF в мягком режиме
+                range_sig = generate_range_corridor_signal(
+                    df_h1,
+                    df_m15 if not df_m15.empty else None,
+                    lookback=settings.range_lookback_bars,
+                    entry_zone_pct=max(settings.range_entry_zone_pct, 30.0),
+                    min_width_pct=settings.range_min_width_pct,
+                    max_width_pct=max(settings.range_max_width_pct, 5.0),
+                    max_adx=max(settings.range_max_adx, 35.0),
+                )
+                if range_sig and range_sig.direction != SignalDirection.FLAT:
+                    signal = range_sig
+                else:
+                    signal = generate_rf_signal(
+                        df_h1,
+                        df_m15 if not df_m15.empty else None,
+                        stop_atr_mult=settings.default_stop_atr_mult,
+                        tp_atr_mult=settings.default_tp_atr_mult,
+                        strict_mtf=False,
+                    )
             elif settings.strategy_profile == "moex_optimal":
                 signal = generate_rf_signal(
                     df_h1,
                     df_m15 if not df_m15.empty else None,
                     stop_atr_mult=settings.default_stop_atr_mult,
                     tp_atr_mult=settings.default_tp_atr_mult,
+                    strict_mtf=True,
                 )
             else:
                 from tbank_bot.strategy.futures_strategy import generate_signal
