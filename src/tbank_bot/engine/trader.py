@@ -266,8 +266,8 @@ class FuturesTradingEngine:
                     lookback=settings.range_lookback_bars,
                     entry_zone_pct=max(settings.range_entry_zone_pct, 30.0),
                     min_width_pct=settings.range_min_width_pct,
-                    max_width_pct=max(settings.range_max_width_pct, 5.0),
-                    max_adx=max(settings.range_max_adx, 35.0),
+                    max_width_pct=max(settings.range_max_width_pct, 8.0),
+                    max_adx=max(settings.range_max_adx, 60.0),
                 )
                 if range_sig and range_sig.direction != SignalDirection.FLAT:
                     signal = range_sig
