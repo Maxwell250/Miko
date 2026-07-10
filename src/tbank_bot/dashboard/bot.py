@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -107,14 +108,20 @@ async def cmd_status(
     snapshot = None
     try:
         if settings.tbank_token:
-            account_id = broker.get_account_id()
-            snapshot = broker.get_account_snapshot(account_id)
+            account_id, snapshot = await asyncio.to_thread(
+                _fetch_account_snapshot, broker
+            )
     except Exception as exc:
         logger.warning("Status portfolio error: %s", exc)
     await message.answer(
         format_status(controller, settings, snapshot),
         parse_mode="HTML",
     )
+
+
+def _fetch_account_snapshot(broker: TBankBroker):
+    account_id = broker.get_account_id()
+    return account_id, broker.get_account_snapshot(account_id)
 
 
 @router.message(Command("positions"))
@@ -127,8 +134,7 @@ async def cmd_positions(message: Message, settings: Settings, broker: TBankBroke
         await message.answer("⚠️ TBANK_TOKEN не задан")
         return
     try:
-        account_id = broker.get_account_id()
-        snapshot = broker.get_account_snapshot(account_id)
+        _, snapshot = await asyncio.to_thread(_fetch_account_snapshot, broker)
         await message.answer(format_positions(snapshot), parse_mode="HTML")
     except Exception as exc:
         await message.answer(f"❌ {exc}")

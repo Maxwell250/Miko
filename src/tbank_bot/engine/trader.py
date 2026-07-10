@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -55,7 +56,7 @@ class FuturesTradingEngine:
             return signal.context.structure.summary
         return ""
 
-    async def _check_paper_exits(self, account_id: str) -> list[CloseEvent]:
+    def _check_paper_exits(self, account_id: str) -> list[CloseEvent]:
         """Виртуальное закрытие paper-позиций по SL/TP."""
         closed: list[CloseEvent] = []
         for figi, pos in list(self.tracker.positions.items()):
@@ -112,7 +113,7 @@ class FuturesTradingEngine:
 
         return closed
 
-    async def _sync_live_closes(self, snapshot, account_id: str) -> list[CloseEvent]:
+    def _sync_live_closes(self, snapshot, account_id: str) -> list[CloseEvent]:
         open_figis = {p.figi for p in snapshot.positions}
         exit_prices: dict[str, float] = {}
 
@@ -138,18 +139,15 @@ class FuturesTradingEngine:
         for ev in events:
             await notify_user(settings, self.controller, format_close_notification(ev))
 
-    async def run_cycle(self, *, scan_only: bool = False) -> list[dict]:
+    def _run_cycle_sync(self, *, scan_only: bool = False) -> tuple[list[dict], list[CloseEvent]]:
+        """Синхронный цикл (T-Bank API) — выполняется в thread pool, не блокирует Telegram."""
         settings = self.settings
-        if not settings.tbank_token:
-            raise RuntimeError("TBANK_TOKEN не задан. Получите токен: tbank.ru/invest/open-api")
-
         account_id = self.broker.get_account_id()
         snapshot = self.broker.get_account_snapshot(account_id)
 
+        closed: list[CloseEvent] = []
         if not scan_only:
-            paper_closed = await self._check_paper_exits(account_id)
-            live_closed = await self._sync_live_closes(snapshot, account_id)
-            await self._notify_closes(paper_closed + live_closed)
+            closed = self._check_paper_exits(account_id) + self._sync_live_closes(snapshot, account_id)
 
         instruments = self.broker.resolve_tradeable_futures(settings, snapshot.available)
         results: list[dict] = []
@@ -157,7 +155,7 @@ class FuturesTradingEngine:
         ranked: list[tuple[float, dict]] = []
 
         for inst in instruments:
-            result = await self._process_instrument(
+            result = self._process_instrument(
                 account_id,
                 snapshot,
                 inst,
@@ -167,7 +165,7 @@ class FuturesTradingEngine:
             )
             results.append(result)
             ranked.append((float(result.get("rank_score", 0)), result))
-            await asyncio.sleep(0.3)
+            time.sleep(0.3)
 
         if not scan_only:
             open_slots = max(
@@ -188,7 +186,7 @@ class FuturesTradingEngine:
                     continue
                 inst_match = next(i for i in instruments if i.ticker == result["ticker"])
                 idx = results.index(result)
-                results[idx] = await self._process_instrument(
+                results[idx] = self._process_instrument(
                     account_id,
                     snapshot,
                     inst_match,
@@ -202,9 +200,19 @@ class FuturesTradingEngine:
             actions = [f"{r.get('ticker')}: {r.get('action')}" for r in results]
             logger.info("Цикл завершён: %s", " | ".join(actions))
 
+        return results, closed
+
+    async def run_cycle(self, *, scan_only: bool = False) -> list[dict]:
+        settings = self.settings
+        if not settings.tbank_token:
+            raise RuntimeError("TBANK_TOKEN не задан. Получите токен: tbank.ru/invest/open-api")
+
+        results, closed = await asyncio.to_thread(self._run_cycle_sync, scan_only=scan_only)
+        if closed:
+            await self._notify_closes(closed)
         return results
 
-    async def _process_instrument(
+    def _process_instrument(
         self,
         account_id: str,
         snapshot,
